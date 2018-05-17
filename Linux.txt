@@ -1,4 +1,7 @@
 http://ru.opensuse.org/VirtualBox
+HAL (Hardware Abstraction Level) - слой абстрагирования (нужен для того чтобы ОС могла работать с любым железом)
+dbus - шина по которой интерфейс ОС общался с HAL
+udev - менеджер устройств linux (похож на plug in play) м. динамически удалять и устанавливать у-ва
 |- знак пайплайн pipline
 Кирилл Семаев : или вот понятней ссылка: http://inflin.narod.ru/lin/lin13.htm  (но верхняя подробней)
 manage-bde X: -lock
@@ -2981,6 +2984,79 @@ cat /var/lib/dhcp/dhcpd.leases
 cat /var/log/dhcpd.log
 проверяем получение новой информации в зонах (появится после рестарта службы dns: bind9):
 cat forward.bind
+-----------------------------------------------------------------------------------------------
+
+СОЗДАЕМ ТРЕКЕР ЗАЯВОК
+=====================
+
+АГЕНТ ПЕРЕДАЧИ ПОЧТЫ (MTA) POSTFIX
+==================================
+
+по сертификатам: https://habr.com/company/tuthost/blog/150433/
+варианты релеев  на разных хостерах: http://sys-adm.org.ua/mail/postfix-sender-dependent-relayhost
+
+Если уже установлен sendmail - его нужно отключить.
+устанавливаем пакет postfix:
+#На debian потребовалось также установить пакет: apt-get install libsasl2-modules чтобы всё заработало
+apt-get install postfix
+при установке выбираем конфигурацию Satellite system (просто для отправки почты через к-то узел)
+также есть возможность выбрать конфигурации:
+Internet Site (полноценный почтовый сервер) 
+Internet with smarthost (получает почту сам, а отправляет черз к-то узел)
+(все почта отправляется внутри узла, без выхода в сеть)
+потом в случае чего в любой момент сможем запустить программу dpkg-reconfigure для запуска мастера настройки
+или отредактировать конф. файл
+в мастере установки указываем:
+1.имя хоста
+укажем ubsrv
+2.сервер используемый для редиректа
+как наз-ся сервер для отправки писем стороннего почтового сервера (mail.ru, gmail) и порт
+укажем smtp.gmail.com:587
+
+установим утилиты при пом. которых будем проверять работу почтового сервера (для отправки письма):
+apt-get install mailutils
+откроем файл конфигурации postfix:
+vi /etc/postfix/main.cf
+в нем
+нужно убедиться, что указан relayhost:
+relayhost = smtp.gmail.com:587
+можно убрать ipv6 адреса из конфигурации
+добавим опцию использования протокола SASL (simple authentication security layer):
+smtp_sasl_auth_enable = yes
+#укажем откуда брать пароль почты (храним в отдельном ф-ле для безоп-ти)
+smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+#не пускать никого анонимно на этот сервер
+smtp_sasl_security_options = noanonymous
+#файл в котором будут лежать доверенные центры сертификации
+smtp_tls_CAfile = /etc/postfix/cacert.pem
+#указываем, что smtp будет отправляться с использованием tls
+smtp_use_tls = yes
+сохраняем, выходим
+теперь нужно создать ф-л с логином и паролем:
+vi /etc/postfix/sasl_passwd
+запишем в нем:
+smtp.gmail.com:587	mberdyugin@gmail.com:наш_пароль
+сохраняем, выходим
+теперь сменим права на файл (доступ только у su и только на чтение):
+cmod 400 /etc/postfix/sasl_passwd
+загружаем этот файл в postfix с пом. команды postmap (исп. для создания и изменения ф-лов конфигураций):
+postmap /etc/postfix/sasl_passwd
+в папке /etc/ssl/serts лежит куча сертиф-ов, среди них лежит сертификат, 
+который явл. центром сертификации для серт-ов вида X.509 (если мы говорим, что доверяем ему - мы автомат. доверяем большинству защищенных серверов в интернете)
+/etc/ssl/certs/Thawte_Premium_Server_CA.pem
+скопируем его в наш ф-л указанный в конфигурации postfix:
+cat /etc/ssl/certs/Thawte_Premium_Server_CA.pem | sudo tee -a /etc/postfix/cacert.pem
+рестартуем сервис:
+service postfix restart
+отправим проверочное письмо:
+echo "Test Letter Number 1" | mail -s "Test 1" 1c@mail.ru
+посмотрим логи:
+tail /var/log/mail.log
+на gmaile нужно разрешить доступ к почт. ящику из непроверенных приложений (разрешаем):
+https://myaccount.google.com/lesssecureapps
+смотрим последние 4 сообщения лога:
+tail -n 4 /var/log/mail.log
+
 
 
 
