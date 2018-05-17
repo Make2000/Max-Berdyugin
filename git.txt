@@ -1,0 +1,54 @@
+Установим Git
+В Gite
+устанавливаем глобальные параметры:
+git config --global user.name "Max Berdyugin"
+git config --global user.email "maksim_bv@mail.ru"
+Также нам нужно настроить параметры установок окончания строк, для Windows мы вводим две команды:
+git config --global core.autocrlf true
+git config --global core.safecrlf false
+git config --global core.eol native
+
+генерируем ключи:
+ssh-keygen -t rsa -C "maksim_bv@mail.ru"
+они создаются в папке ~/.ssh
+В поле SSH Keys в настройках профиля на сайте вставляем содержимое из файла id_rsa.pub
+авторизуемся:
+ssh -T git@github.com
+перейдем в папку, где б. лежать папка с проектом
+сделаем копию с репозитория (ссылка из св-в репозитория на сайте):
+git clone git@github.com:Make2000/Max-Berdyugin.git
+Если проекта еще нет на сайте:
+	Инициализируем папку для Git репозитория. Это нужно сделать только один раз для каждого проекта.
+	git init
+	Связываем папку с удаленным репозиторием:
+	git remote add origin https://github.com/LeoXCoder/test_project.git
+добавить файл на сервер:
+git add Linux.txt
+подтвердить добавление ф-ла:
+git commit -m "add new file Linux.txt"
+узнать статус репозитория:
+git status
+заливаем на сервер в основную ветку:
+git push origin master #следующий раз пишем команду без параметров git push
+После каких-то изменений в коде, выполняем все те же команды:
+git add . #добавляет все сделанные изменения
+git commit -m "I changed the user module."
+git push
+
+
+синхронизируем изменения с локального хоста во врем. папку локальный комп:
+git fetch
+выполняем синхронизацию (слияние информации хоста с сервером)
+git rebase
+Для скачивания репозитория используется команда:
+git pull
+
+Откат изменений
+---------------
+
+Полный откат до предыдущего коммита:
+git reset HEAD --hard
+Сброс изменений в файле на версию коммита:
+git checkout <filename>
+Откат до установленного тега, например v1:
+git checkout v1
