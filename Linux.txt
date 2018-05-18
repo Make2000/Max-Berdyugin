@@ -3102,6 +3102,9 @@ adduser --system --group rt
 usermod -aG rt www-data
 --------------------------------------------------------------------------------------------------
 для установки трекера заявок скачаем установочный пакет с офиц. сайта https://www.bestpractical.com
+Мануал по конфигуратору: https://docs.bestpractical.com/rt/4.2.15/configure.html
+Русскоязычная статья неплохая: https://habr.com/sandbox/96505/
+Лучший мануал (англ): http://binarynature.blogspot.ru/2013/10/install-request-tracker-4-on-ubuntu-server.html
 для начала обнофим информацию о репозиториях:
 apt-get update
 проверяем установлен ли perl и make:
