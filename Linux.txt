@@ -3187,5 +3187,104 @@ service apache2 restart
 если стартанул без ошибок
 заходим на нашу страницу через браузер, видим что все заработало
 по умолч. логин root, пароль: который_мы_задавали (password)
+---------------------------------------------------------------------------------------------
+Полный мануал по всем возможностям: https://docs.bestpractical.com/rt/4.4.3/index.html
+Опции для файла RT_SiteConfig.pm: https://docs.bestpractical.com/rt/4.4.3/RT_Config.html
 
+откроем ф-л конфигурации:
+/opt/rt4/etc/RT_SiteConfig.pm
+добавим здесь базовые настройки:
+Set($rtname,'rt.it-semaev.ru'); #имя rt, желательно, чтобы совпадало с внешним именем
+Set($Organisation, 'rt.it-semaev.ru');
+Set(@ReferrerWhitelist, qw(10.0.1.8:80); #лист с которого б.разрешено обращаться к нашему rt
+Set ($Timezone, 'Europe/Moscow');
+Set($LogoLinkURL, 'http://it-semaev.ru'); #ссылка на логотип
+сохраняем и перегружаем apache:
+service apache2 restart
+остальные настройки уже делаем через браузер
+---------------------------------------------------------------------------------------------
+Мануал по модулю: https://metacpan.org/pod/RT::Authen::ExternalAuth
+Пример внедрения: http://trevthorpe.blogspot.ru/2015/01/request-tracker-424-ldap-authentication.html
+установим модули для внешней аутентификации:
+cpan -i RT::Authen::ExternalAuth
+модуль для импорта из службы каталогов:
+cpan -i RT::Extension::LDAPImport
+отредактируем ф-л конфигурации /opt/rt4/etc/RT_SiteConfig.pm
+добавим записи:
+Set(@Plugins, qw(RT::Extension::LDAPImport)); #подключим плагин
+#добавим опции к плагину
+Set ($LDAPHost,'dc.mti.local'); #имя контроллера домена
+Set ($LDAPUser,'mti\rt'); #пол-ля от имени кот-го будем просматривать наш домен
+Set ($LDAPPassword, '1000'); #пароль пол-ля
+Set ($LDAPBase, 'dc=mti,dc=local'); #каталог в АД из которого б.импортировать пол-лей
+Set ($LDAPFilter, '(&(objectClass=person))'); #фильтр импорта только людей
+Set ($LDAPMapping, {	Name	=> 'sAMAccountName'), #имя импортируемого пол-ля
+			RealName	=>'cn', #реальное имя пол-ля
+			EmailAddress	=> 'mail'}); #брать email адрес пол-ля
+Set ($LDAPCreatePrivileged, 1); #привелегированные права пол-ля
+Set ($LDAPUpdateUsers, 1); #обновлять инф-ю о пол-лях при запуске импорта
+сохраняем,выходим
+запустим тестовый импорт:
+/opt/rt4/local/plugins/RT-Extension-LDAPImport/bin/rtldapimport \
+> --debug > ldapimport.debug 2>&1
+#создаст в папке, в кот-й мы находимся ф-л ldapimport.debug
+теперь запустим импорт:
+/opt/rt4/local/plugins/RT-Extension-LDAPImport/bin/rtldapimport \
+> --import
+добавим в ф-л конфигурации еще плагин аутентификации:
+Set (@Plugins, qw(RT::Authen::ExternalAuth RT::Extension::LDAPImport)); #добавим в эту строчку
+#а также настройки плагина, в принципе поль-ли м.создаться только с этим плагином, без импорта 
+Set ($ExternalAuthPriority, [ 'My_AD' ]); #куда он будет передавать запросы аутентификации ('My_AD' псевдоним источника)
+Set ($ExternalAuthPriority, [ 'My_AD' ]); #если есть альтернатива от куда еще качать
+Set ($UserAutocreateDefaultsOnLogin, { Priveleged => 1 }); #привелегированные права пол-ля
+Set ($ExternalSettings, {
+	'My_AD'		=> {
+	'type'		=> 'ldap',
+	'server'	=> 'dc.mti.local',
+	'user'		=> 'mti\rt',
+	'pass'		=> '1000',
+	'base'		=> 'dc=mti,dc=local', #от куда берем пол-лей
+	'filter'	=> '(objectClass=person)',
+	'attr_match_list'	=> ['Name'], #аттрибут как пол-ль м.аутентифицироваться (по имени 'login')
+	'attr_map'	=> {			#указываем, что за параметр 'Name'
+	'Name'		=> 'sAMAccountName',
+	'EmailAddress'	=> 'mail',
+	'RealName'	=> 'cn',
+	},
+	},
+} );
+сохраняем,выходим
+рестартуем apache:
+service apache2 restart
+для проверки в АД создадим пол-ля, которого не было при импорте
+проверяем вход в трекере
+---------------------------------------------------------------------------------------------------------------------------
+ou - organisation unit
+cn - canonical name
+Настроим аутентификацию через apache
+Мод базовой аутентификации: https://httpd.apache.org/docs/2.4/mod/mod_auth_basic.html
+Мод ldap аутентификаци: http://httpd.apache.org/docs/current/mod/mod_authnz_ldap.html
+Разные опции RT: https://docs.bestpractical.com/rt/4.4.1/RT_Config.html
+зайдем в конфиг зайта по умолчанию apache:
+/etc/apache2/sites/available/000-default.conf
+для того, чтобы apache м.авторизовывать пол-лей нужно изменить строчку Require all granted на:
+Require valid-user #пол-ли д.б. настоящие, т.е. могли авторизоваться
+AuthType Basic #тип аутентифик. базовый
+AuthName "Request Tracker" #какая строчка б. показана браузером
+AuthBasicProvider ldap
+AuthLDAPURL "ldap://192.168.0.1/dc=mti,dc=lan?sAMAccountName?sub?(objectClass=*)"
+# IP dc(м. имя)/basedn(откуда искать пол-лей)?что ищем у по-лей(sAMAccountName)?sub(пробираемся в глубь дерева)?класс объекта поиска=*(м.поставить person)
+#след.строка от имени кого б. проверять, т.к. АД не умеет пускать анонимных п-лей поэтому создадим пол-ля connect в корне домена
+AuthLDAPBindDN "cn=connect,dc=mti,dc=lan" 
+AuthLDAPBindPassword "1000" #пароль п-ля connect
+сохраняем,выходим
+включаем еще модуль:
+a2enmod authnz_ldap
+рестартуем apache:
+service apache2 restart
+чтобы после авторизации apache еще не было авторизации web, нужно открыть ф-л конфигурации rt:
+/opt/rt4/etc/RT_SiteConfig.pm
+в конец добавим опцию, кот-я позволит пол-лю авторизоваться:
+Set ($WebRemoteUserAuth, 1); #позволит передавать apache инф. об успешном логировании rt
+#теперь при входе на rt не б. пускать п-ля root, чтобы это исправить нужно покопаться в apache
 
