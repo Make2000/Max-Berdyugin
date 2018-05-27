@@ -2277,6 +2277,7 @@ sudo su #запрашивается пароль пол-ля с правами администратора и запускается сеан
 в redhat системах:
 sudo visudo
 %wheel #аналог группы sudo
+sudo - substitute user and do?
 -------------------------------------------------------------------------------------------------------------------------------
 
 АВТОМАТИЗАЦИЯ ЗАДАЧ (ПОВТОРЯЮЩИХСЯ), ПЛАНИРОВЩИК CRON
@@ -4036,3 +4037,121 @@ ALL: LOCAL @some_netgroup #всем демонам(ALL) разрешить локальные (LOCAL) соедине
 ALL: .foobar.edu EXCEPT terminalserver.foobar.edu #всем демонам(ALL) разрешить принимать соединения от поддомена .foobar.edu кроме сервера terminalserver.foobar.edu
 tftpd: 192.168.0 #демон tftpd может принимать соединения из сети
 ф-л /etc/hosts.deny
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+IPTABLES+SQUID+BIND
+===================
+
+squid+active directory kerberos: https://interface31.ru/tech_it/2015/06/nastraivaem-squid-dlya-raboty-s-active-directory-chast-2-kerberos-autentifikaciya.html
+
+установим пакеты утилитой apt
+apt install bind9 squid3
+проверим настройки сет. карт
+enp0s3 inet addr: 10.0.1.5 Bcast: 10.0.1.255 Mask: 255.255.255.0 (сет. инт. смотрит в интернет)
+настроим 2-ю сет.карту, которая смотрит в локальную сеть
+vi /etc/network/interfaces
+содержит:
+source /etc/network/interfaces.d/*
+auto lo
+iface lo inet loopback
+auto enp0s3
+iface enp0s3 inet dhcp
+как видим здесь 2-я сет.карта не указана
+мы можем посмотреть название неопределившейся сет.карты командой:
+ip link
+покажет:
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1
+	link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: enp0s3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP mode DEFAULT group default qlen 1000
+	link/ether 08:00:27:e9:4d:0b brd ff:ff:ff:ff:ff:ff
+3: enp0s8: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+	link/ether 08:00:27:92:9d:09 brd ff:ff:ff:ff:ff:ff
+видим, что сет.карта enp0s8 находится в состоянии DOWN
+нам ее нужно вписать в ф-л /etc/network/interfaces
+добавим в ф-л:
+auto enp0s8
+iface enp0s8 inet static
+address 192.168.0.10
+netmask 255.255.255.0
+#шлюз не указываем, т.к. 1 шлюз мы будем получать по dhcp, если мы пропишем 2 шлюза нам нужно б. выставлять метрики
+перегружаем сетевую службу:
+service networking restart
+проверяем командой ifconfig, видим вторая сет.карта появилась с ip-адресом
+для того, чтобы ubuntu могла пробрасывать пакеты из одной сети в другую нам нужно разрешить forwarding vIP4 между сетевыми интерфейсами
+для этого отредактируем ф-л конфигурации ubuntu:
+vi /etc/sysctl.conf
+в нем найти и раскомментировать строчку:
+net.ipv4.ip_forward=1 # включить forwarding
+для того, чтобы этот параметр применился выполним команду:
+sysctl --system
+теперь выключим встроенный firewall в ubuntu:
+ufw disable
+#фаервол остановлен и убран из автозапуска
+#Firewall stopped and disabled on system startup
+посмотрим текущие настройки iptables
+iptables -L
+добавим правило разрешающее подключение по ssh:
+iptables -A INPUT -p tcp --dport ssh -j ACCEPT
+потом включим политику DROP для цепочки INPUT (ключ -P policy):
+iptables -P INPUT DROP
+тоже делаем для цепочки FORWARD:
+iptables -P FORWARD DROP
+добавим входящее правило разрешающее пинг (ключ -A add добавить, -p для протокола,-j действие):
+iptables -A INPUT -p icmp -j ACCEPT
+после перезагрузки все правила сотрутся, поэтому сохраним сделанные настройки в ф-л:
+iptables-save > /home/semaev/iptables.backup
+теперь прокинем пинг от хоста внутри сети 192.168.0.101 до хоста в сети интернет 10.0.1.1
+восстановим настройки iptables:
+iptables-restore < iptables.backup
+добавим правило в цепочку INPUT (ключ -m marker (явным образом) все пакеты с состоянием (state) --state перечисляем состояния)
+iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+#RELATED - уже относятся, ESTABLISHED - установленные соединения
+делаем такое-же правило для цепочки FORWARD:
+iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+разрешим пинг в сеть интернет:
+iptables -A FORWARD -p icmp -j ACCEPT
+#когда мы не указываем с какой таблицей мы работаем, по умолчанию б. работать с таблицей FILTER
+поэтому аналогично правило можно записать:
+iptables -t filter -A FORWARD -p icmp -j ACCEPT
+цепочки POSTROUTING нет в стандартной таблице filter, поэтому нам нужно указать таблицу nat в правиле
+сделаем маршрутизацию прохождения пакета используя таб-цу nat используя действие masquerade (заменим адрес источника соединения на адрес внешней сет.карты машины линукс(с IPTABLES))
+в цепочке POSTROUTING  (для пакетов -s source источником кот-х явл-ся сеть 192.168.0.0/24 или вместо IP сети указать -i interface имя интерфейса enp0s3 )
+iptables -t nat -A POSTROUTING -s 192.168.0.0/24 -j MASQUERADE
+#т.о. все пакеты  из этой локальной сети их ip-адреса б. заменяться на внешний ip-адрес машины линукс(с IPTABLES) 10.0.1.5
+командой iptables -L это правило мы не увидим, т.к. по умолчанию мы работаем с таблицей filter, поэтому нужно написать:
+iptables -t nat -L
+чтобы посмотреть правила сразу для всех таблиц:
+iptables-save
+установим пакет iptables-persistent, чтобы каждый раз не восстанавливать настройки iptables после перезагрузки:
+apt install iptables-persistent
+после установки этого пакета, наши правила сохранились в /etc/iptables/rules.v4
+дальше если будем менять правила iptables, нужно б. просто их сохранить в этот ф-л командой iptables-save
+#в CentOS можно написать service iptables save и правила сохраняться тоже по этому пути 
+чтобы м.б. пинговать из локальной сети узлы в интернете, например ya.ru должен проходить dns-запрос для этого сделаем проброс этих запросов:
+iptables -A FORWARD -p tcp -m multiport --ports 53 -s 192.168.0.0/24 -j ACCEPT
+iptables -A FORWARD -p udp -m multiport --ports 53 -s 192.168.0.0/24 -j ACCEPT
+#ключ -p protocol, multiport - когда указываем несколько портов
+чтобы удалить правило в цепочке (-D delete):
+iptables -D FORWARD -p udp -m multiport --ports 53 -s 192.168.0.0/24 -j ACCEPT
+или указав номер правила в цепочке (считаем сверху) посмотрев командой iptables-save:
+iptables -D FORWARD 4
+чтобы открывать страницы в интернете нужно разрешить прох. пакетов с протоколом http:
+iptables -A FORWARD -p tcp -m multiport --ports 53,80,8080,443,110,25,21 -s 192.168.0.0/24 -j ACCEPT
+сохраним изменения в iptables-persistent командой:
+netfilter-persistent save
+если эта команда не сработает, можно так:
+dpkg-reconfigure iptables-persistent
+
+проброс портов во внутрь локальной сети DNAT (если мы хотим чтобы к-то сервис был доступен снаружи)
+создадим правило, которое будет пробрасывать по порту 80 извне в локальную сеть:
+iptables -t nat -A PREROUTING -i enp0s3 -p tcp -m tcp --dport 80 -j DNAT --to-destination 192.168.0.101
+#внешний интерфес enp0s3, если кто-то стучится по протоколу -p tcp -m marker tcp на порт назначения destination port --dport
+#то выполнить действие -j DNAT перенаправить --to-destination 192.168.0.101
+этого правила недостаточно, потому-что мы перехватываем соединение по порту 80 и пробрасываем в лок.сеть,
+но в цепочке FORWARD у нас не разрешен проброс порта 80 извне, а разрешет только из лок. сети,
+поэтому добавим проброс порта в цепочку FORWARD:
+iptables -A FORWARD -i enp0s3 -p tcp --dport 80 -j ACCEPT
+также пробросим соединение по 81 порту, но с трансляцией на порт 80:
+iptables -t nat -A PREROUTING -i enp0s3 -p tcp -m tcp --dport 81 -j DNAT --to-destination 192.168.0.102:80
+в цепочку FORWARD уже правило добавлять не нужно, т.к. в цепочке PREROUTING уже сразу порт 81 б. меняться на порт 80
+и в цепочку FORWARD уже б. попадать пакеты с портом назначения 80
