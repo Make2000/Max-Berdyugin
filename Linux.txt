@@ -4105,7 +4105,7 @@ iptables-save > /home/semaev/iptables.backup
 iptables-restore < iptables.backup
 добавим правило в цепочку INPUT (ключ -m marker (явным образом) все пакеты с состоянием (state) --state перечисляем состояния)
 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
-#RELATED - уже относятся, ESTABLISHED - установленные соединения
+#RELATED - уже относятся (связанный), ESTABLISHED - установленные соединения (механизм connection tracker -conntrack умеет отслеживать состояние соединения)
 делаем такое-же правило для цепочки FORWARD:
 iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 разрешим пинг в сеть интернет:
