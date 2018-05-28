@@ -4155,3 +4155,64 @@ iptables -A FORWARD -i enp0s3 -p tcp --dport 80 -j ACCEPT
 iptables -t nat -A PREROUTING -i enp0s3 -p tcp -m tcp --dport 81 -j DNAT --to-destination 192.168.0.102:80
 в цепочку FORWARD уже правило добавлять не нужно, т.к. в цепочке PREROUTING уже сразу порт 81 б. меняться на порт 80
 и в цепочку FORWARD уже б. попадать пакеты с портом назначения 80
+
+Настраиваем bind для простейшего приема и переадрессации dns-запросов (DNS-FORWARDING)
+основной конф. файл bind находится: /etc/bind/named.conf.options
+в нем разкомментируем и допишем:
+forwarders {
+	10.0.1.1 #вышестоящий dns, например адрес шлюза, маршрутизатора
+};
+#скажем чтобы сервер все запросы не пытался сам обработать, а переадресовывал (в первую очередь)
+forward first;
+#по какому порту ему прослушивать запросы, но по внутреннему интерфейсу 192.168.0.10, чтобы из интернета никто не мог слать запросы
+#и через него узнавать что у нас в локалке
+listen-on port 53 {192.168.0.10;};
+#отключаем dnssec
+#dnssec-validation auto;
+после нам нужно настроить rndc ключи командой:
+rndc-confgen -r /dev/urandom #/dev/urandom - устройство, кот-е поможет сгенерировать ключ
+часть вывода нужно сохранить в rndc.conf:
+#Start of rndc.conf
+key "rndc-key" {
+	algorithm hmac-md5;
+	secret "NGLaqUEqZ69JxB1p0SO/lg==";
+};
+options {
+	default-key "rndc-key";
+	default-server 127.0.0.1;
+	default-port 953;
+};
+#End of rndc.conf
+часть вывода которую нужно сохранить в named.conf:
+#Use with the following in named.conf, adjusting the allow list as needed:
+#key "rndc-key" {
+#	algorithm hmac-md5;
+#	secret "NGLaqUEqZ69JxB1p0SO/lg==";
+#};
+#controls {
+#	inet 127.0.0.1 port 953 #потом нужно разрешить в iptables этот порт
+#		allow { 127.0.0.1; } keys { "rndc-key"; };
+#};
+#End of named.conf
+создаем ф-л /etc/bind/rndc.conf и вставляем в него нужный кусок
+#выделяем кусок нажимаем enter, открываем ф-л редактором и правой кнопкой мыши вставляем
+создаем ф-л /etc/bind/named.conf и вставляем в него нужный кусок и раскомментируем
+разрешим в iptables порт 953 для петлевого ин-фейса 127.0.0.1:
+iptables -A INPUT -i lo -j ACCEPT
+можно перезапустить сервер bind9:
+service bind9 restart
+проверим как проверяются dns-имена командой nslookup
+nslookup google.com
+теперь на машине внутри сети прописываем адрес dns-сервера этой машины Linux, адрес б. одинаковый со шлюзом
+страница интернета не откроется, т.к. в цепочке INPUT у iptables не разрешен 53 порт, а также удалим правило
+с пробросом dns-запросов:
+iptables -A INPUT -p udp -m multiport --ports 53 -s 192.168.0.0/24 -j ACCEPT
+iptables -A INPUT -p tcp -m multiport --ports 53 -s 192.168.0.0/24 -j ACCEPT
+iptables -D FORWARD -p udp -m multiport --ports 53 -s 192.168.0.0/24 -j ACCEPT
+из второго правила выдерним 53 порт, для этого сначала его удалим, а потом добавим без 53 порта:
+iptables -D FORWARD -p tcp -m multiport --ports 53,80,8080,443,110,25,21 -s 192.168.0.0/24 -j ACCEPT
+iptables -A FORWARD -p tcp -m multiport --ports 80,8080,443,110,25,21 -s 192.168.0.0/24 -j ACCEPT
+после чего сохраняем правила iptables:
+dpkg-reconfigure iptables-persistent
+<Yes>
+
