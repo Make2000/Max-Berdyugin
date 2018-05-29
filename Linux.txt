@@ -4041,7 +4041,7 @@ tftpd: 192.168.0 #демон tftpd может принимать соединения из сети
 
 IPTABLES+SQUID+BIND
 ===================
-
+как блочить https ресурсы: https://imbicile.pp.ru/ubuntu-16-04-prozrachnyj-squid-https/
 squid+active directory kerberos: https://interface31.ru/tech_it/2015/06/nastraivaem-squid-dlya-raboty-s-active-directory-chast-2-kerberos-autentifikaciya.html
 
 установим пакеты утилитой apt
@@ -4215,4 +4215,161 @@ iptables -A FORWARD -p tcp -m multiport --ports 80,8080,443,110,25,21 -s 192.168
 после чего сохраняем правила iptables:
 dpkg-reconfigure iptables-persistent
 <Yes>
+
+настройка прокси squid
+посмотрим версию squid, запустим исполняемый ф-л с ключом -v:
+/usr/sbin/squid -v
+показал версию:
+Squid Cache: Version 3.5.12
+сделаем бэкап конф. файла squid:
+cp /etc/squid/squid.conf /etc/squid/squid.conf.backup
+отредактируем его:
+vi /etc/squid/squid.conf
+сделаем поиск слова localnet (/localnet) #означает лок.сеть
+раскомментируем строчку:
+acl localnet src 192.168.0.0/24 #указываем адрес лок.сети
+ниже указано:
+acl SSL_ports port 443 #safe-ports (безопасные порты) считаем порты перечисленные
+acl Safe_ports port 80
+acl Safe_ports port 21
+acl Safe_ports port 443
+acl Safe_ports port 70
+acl Safe_ports port 210
+acl Safe_ports port 1025-65535
+acl Safe_ports port 280
+ищем строчку http_access (кому разрешается доступ)
+http_access deny !Safe_ports #политика http_access запрещает все, кроме безопасных портов
+http_access deny CONNECT !SSL_ports #запрещает подключение по всем портам, кроме SSL
+http_access allow localhost manager #разрешается доступ к кэш-менеджеру только лок.хосту
+http_access deny manager #всем остальным доступ запрещен
+разкомментируем строчку:
+http_access allow localnet #разрешаем доступ из лок.сети
+ищем строчку http_port
+т.к. 2 ин-фейса, укажем по какому и-фейсу б.прослушивать порт:
+http_port 192.168.0.10:3128 intercept
+сейчас по умолчанию сейчас прокси-сервер б. являться непрозрачным, чтобы ничего не указывать в браузерах - сделаем его прозрачным
+для этого добавим слово intercept
+можно также сделать один порт для непрозрачного прокси, для https
+сохр.,выходим
+перезапускаем службу squid
+service squid restart #загрузка до нескольких минут
+теперь удалим правило проброса портов в iptables:
+iptables -D FORWARD -p tcp -m multiport --ports 80,8080,443,110,25,21 -s 192.168.0.0/24 -j ACCEPT
+создадим заново, но без web портов (слушаем порты 110,25,21):
+iptables -D FORWARD -p tcp -m multiport --ports 110,25,21 -s 192.168.0.0/24 -j ACCEPT
+добавим в цепочку INPUT порт прокси 3128: 
+iptables -A INPUT -s 192.168.0.0/24 -p tcp -m multiport --ports 3128 -j ACCEPT
+т.к. клиенты не знают, что им нужно обращаться по порту 3128, добавим:
+iptables -t nat -A PREROUTING -s 192.168.0.0/24 -p tcp -m multiport --dports 80,8080 -j REDIRECT --to-ports 3128
+#действие -j перенаправлять REDIRECT на порт --to-ports 3128
+
+настроим squid для работы с https (проксировать https соединения)
+проверим открытые порты:
+netstat -ntulp
+т.к. стандартный squid не умеет работать с ssl, нам нужно его скомпилировать для работы с ssl
+для этого вначале удалим текущий скрипт:
+apt remove squid
+соберем squid из исходников
+для начала нам нужно убедиться, что включены репозитории для исходников
+откроем информацию о репозиториях (в ubuntu):
+vim /etc/apt/sources.list
+в нем есть много строчек, которые содержат (начинаются) с deb-src, разкомментируем их
+обновим информацию о репозиториях:
+apt-get update
+для сборки squid нам понадобятся пакеты:
+openssl - для работы с ssl и б.генерировать сертификаты
+devscripts - скрипты которые помогают при сборке пакетов
+build-essential - все пакеты необходимые для сборки пакетов
+dpkg-dev - содержит инструменты для распаковки, построения, закачки пакетов
+libssl-dev - библиотека для сборки
+apt install openssl devscripts build-essential dpkg-dev libssl-dev
+подкачаем зависимости, которые б. использоваться при сборке нашего squid3:
+apt-get build-dep squid3
+#он из пакета dpkg-dev
+качаем исходник squid3:
+apt-get source squid3
+в ходе скачивания вышла ошибка:
+W:Невозможно сбросить права для скачивания, так как файл "squid3_3.5.12-lubuntu7.4.dsc" недоступен для пользователя "_apt". - pkgAcquire::Run (13: Отказано в доступе)
+Это вышло потому-что закачка идет в папку пол-ля
+изменим права на этот ф-л:
+chmod 777 squid3 3.5.12-lubuntu7.4.dsc
+и снова запускаем скачивание:
+apt-get source squid3
+установим tree, чтобы посмотреть как осуществляется сборка пакетов
+apt install tree
+покажет дерево директорий
+нас интересует директория из папки пользователя squid3-3.5.12 в ней находится все, что нужно для сборки пакетов
+откроем ф-л ~/squid3-3.5.12/debian/rules (правила сборки пакета)
+допишем в секции DEB_CONFIGURE_EXTRA_FLAGS
+после флага --with-large-files \
+	--enable-ssl \
+	--enable-ssl-crtd \ #сертификат-демон
+	--with-openssl \ #скомпилировать пакет с openssl
+сохр.,выходим
+выполним сборку пакетов из текущей (~/squid3-3.5.12/)директории (ключ -d):
+dpkg-buildpackage -d
+поднимемся на уровень выше cd ..
+и видим, что появились необходимые нам deb-пакеты
+установим (ключ -i) все пакеты *.deb:
+dpkg -i *.deb
+могут выходить вопросы по зависимостям:
+Файл настройки "/etc/squid/squid.conf"
+==> Изменен с момента установки (вами или сценарием).
+==> Автор пакета предоставил обновленную версию.
+Что нужно сделать? Есть след.варианты:
+Y или I: установить версию, предлагаемую сопровождающим пакета
+N или O: оставить установленную на данный момент версию
+D: показать различия между версиями
+Z: запустить оболочку командной строки для проверки ситуации
+По умолчанию сохр.текущая версия ф-ла настройки.
+*** squid.conf (Y/I/N/O/D/Z)[по умолчанию N]? y
+показал
+При обработке след.пакетов произошли ошибки:
+squid3_3.5.12-lubuntu7.4_all.deb
+squid-cgi
+чтобы он установил эти зависимости запустим (ключ -f fix починить/исправить):
+apt-get install -f
+он подкачает зависимости, после чего снова выполняем команду:
+dpkg -i *.deb
+после выполнения (возможно несколько прогонов) установки проверим версию squid:
+squid -v
+покажет:
+Squid Cache: Version 3.5.12
+configure options: среди флагов покажет наши флаги
+--enable-ssl --enable-ssl-crtd --with-openssl
+перейдем в директорию squid и сгенерируем необходимые сертификаты:
+cd /etc/squid/
+выполним команду:
+openssl req -new -newkey rsa:1024 -days 365 -nodes -x509 -keycut squidCA.pem -out squidCA.pem
+Запросит базовые вещи для создания сертификата: страну,город...
+сделаем бэкап ф-ла конфиг. squid:
+cp squid.conf squid.conf.backup
+выберем все не коментированные строчки (которые не начинаются с # и $ ) и направим содержимое в squid.conf
+cat squid.conf.backup | grep -v "^#" | grep -v "^$" > squid.conf
+получим красивый рабочий squid.conf, добавим в ф-л:
+acl localnet src 192.168.0.0/24 #адрес лок.сети
+http_access allow localnet #разрешим доступ из лок.сети
+http_port 192.168.0.10:3128 intercept #прозрачный прокси
+https_port 192.168.0.10:3129 intercept ssl-bump cert=/etc/squid/squidCA.pem
+ssl_bump peek all
+ssl_bump splice all
+sslcrtd_program /usr/lib/squid/ssl_crtd -s /var/lib/ssl_db -M 4MB
+сохр.,выходим
+проверим конф.файл:
+squid -k pars
+переконфигурируем squid согласно новых настроек:
+squid -k reconfigure
+проверим прослушиваемые лок.порты:
+netstat -ntulp
+должны присутствовать:
+Proto	Recv-Q	Send-Q	Local address		Foreign address 	State	PID/Program name
+tcp	0	0	192.168.0.10:3128	0.0.0.0:*		Listen	600/(squid-l)
+tcp	0	0	192.168.0.10:3129	0.0.0.0:*		Listen	600/(squid-l)
+в iptables добавим в цепочку INPUT порт 3129:
+iptables -A INPUT -s 192.168.0.0/24 -p tcp -m multiport --ports 3129 -j ACCEPT 
+а также в таблице nat в цепочке PREROUTING переадресацию пакетов по порту 443 на порт 3129:
+iptables -t nat -A PREROUTING -s 192.168.0.0/24 -p tcp -m multiport --dports 443 -j REDIRECT --to-ports 3129
+
+
+
 
