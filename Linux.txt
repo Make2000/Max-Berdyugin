@@ -4369,6 +4369,74 @@ tcp	0	0	192.168.0.10:3129	0.0.0.0:*		Listen	600/(squid-l)
 iptables -A INPUT -s 192.168.0.0/24 -p tcp -m multiport --ports 3129 -j ACCEPT 
 а также в таблице nat в цепочке PREROUTING переадресацию пакетов по порту 443 на порт 3129:
 iptables -t nat -A PREROUTING -s 192.168.0.0/24 -p tcp -m multiport --dports 443 -j REDIRECT --to-ports 3129
+------------------------------------------------------------------------------------------------------------
+
+СЕРВЕР PUPPET
+=============
+имя нашего хоста devops
+устанавливаем службу времени ntp:
+apt-get -y install ntp
+настроем конф. ф-л:
+/etc/ntp.conf
+укажем пул серверов точного времени
+перезапускаем службу ntp:
+service ntp restart
+временно отключим фаервол:
+ufw disable
+скачаем информацию о репозитории, переходим в домашнюю папку и выполняем команду wget для скачивания дистрибутива:
+cd ~ && wget https://apt.puppetlabs.com/puppetlabs-release-pcl-trusty.deb
+устанавливаем скаченный пакет:
+dpkg -i puppetlabs-release-pcl-trusty.deb
+обновим информацию о репозиториях
+apt-get update
+установим puppetserver:
+apt-get install puppetserver
+посмотрим настройки процесса puppetserver:
+/etc/default/puppetserver
+в нем параметры:
+JAVA_ARGS="-Xms2g -Xmx2g -XX:MaxPermSize=256m" #-Xms2g(сколько оперативки съест при старте) -Xmx2g(до скольки м.увеличивать) лучше исп. одинаковые параметры (изменим под свои требования)
+#-XX:MaxPermSize=256m - кол-во памяти в кот-й хранятся явовские классы
+теперь настроим конф.файл самого puppet:
+/etc/puppetlabs/puppet/puppet.conf
+добавим в файл информацию об агенте:
+[main]
+certname = devops #имя сертификата для нашей машины devops
+server = devops #сервер с которым машина devops б. связываться
+#в дальнейшем, когда б. подключать к-то узлы в certname б.указывать имя сертификата, servername останется неизменным
+прежде чем запускать puppetmaster посмотрем сколько ОЗУ ест сервер изначально:
+free -m
+запускаем службу puppetserver:
+service puppetserver start
+проверим ОЗУ, покажет, что 1Гб он занял
+теперь puppetserver поставить в автозагрузку
+для этого воспользуемся его командой:
+/opt/puppetlabs/bin/puppet resource service puppetserver ensure=running enable=true
+где:
+/opt/puppetlabs/bin/puppet - путь к программе
+resource - команда, кот-я говорит, что service(служба) puppetserver ensure=running(д.б. включена) enable=true(поставлена в автозапуск)
+установим puppet-agent:
+apt-get install puppet-agent (он уже установился с puppetserver)
+аналогичная команда, чтобы запустить агент и поставить его в автозапуск:
+/opt/puppetlabs/bin/puppet resource service puppet ensure=running enable=true
+посмотрим сертификаты, какие у нас есть:
+/opt/puppetlabs/bin/puppet cert list #д. показать запрашиваемые подтверждения сертификаты, если к нам постучалисб к-либо машины, то мы д.б. их одобритиь или отклонить
+пока ничего не показывает
+/opt/puppetlabs/bin/puppet cert list --all
+покажет локальный сертификат машины:
++"devops" (SHA256) 81:45:D1:E7... (alt names: "DNS:puppet", "DNS:devops")
+запустим puppet-agent для синхронизации с puppetserver:
+/opt/puppetlabs/bin/puppet agent --test
+
+
+
+
+
+
+
+
+
+
+
 
 
 
