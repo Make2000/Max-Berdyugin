@@ -4477,7 +4477,7 @@ service ntp restart
 ufw disable
 скачаем информацию о репозитории, переходим в домашнюю папку и выполняем команду wget для скачивания дистрибутива:
 cd ~ && wget https://apt.puppetlabs.com/puppetlabs-release-pcl-trusty.deb
-устанавливаем скаченный пакет:
+устанавливаем скаченный пакет (устанавливаем инф-ю о репозиториях):
 dpkg -i puppetlabs-release-pcl-trusty.deb
 обновим информацию о репозиториях
 apt-get update
@@ -4519,12 +4519,130 @@ apt-get install puppet-agent (он уже установился с puppetserver)
 запустим puppet-agent для синхронизации с puppetserver:
 /opt/puppetlabs/bin/puppet agent --test
 
+установим агент на клиентские машины
+настроим на клиентской машине точное время, далее
+зайдем в ф-л /etc/hosts на клиентской ubuntu (ubsrv) и добавим в него:
+10.0.1.6	devops
+для debian-подобных ОС
+заходим на сайт apt.puppetlabs.com
+ищем пакет с репозиторием для своей ОС и скачиваем его командой:
+wget https://apt.puppetlabs.com/puppetlabs-release-pcl-xenial.deb
+скачивает его в домашнюю папку пол-ля
+теперь нужно установить инф-ю о репозиториях:
+dpkg -i puppetlabs-release-pcl-xenial.deb
+обновим инф-ю о репозиториях:
+apt-get update
+устанавливаем puppet-agent:
+apt-get install puppet-agent
+изменим его ф-л конфигурации:
+vim /etc/puppetlabs/puppet/puppet.conf
+добавим в него информацию об имени агента:
+[agent]
+server = devops
+сохр,вых
+запускаем puppet-agent:
+/opt/puppetlabs/bin/puppet resource service puppet ensure=running enable=true
+идем на puppet-server devops
+узнаем версию агента сервера:
+puppet --version
+покажи нам все сертификаты:
+/opt/puppetlabs/bin/puppet cert list
+покажет нам сертификат машины ubsrv с агентом:
+"ubsrv" (SHA256) 43:7C:E1....
+для того, чтобы его подписать:
+/opt/puppetlabs/bin/puppet cert sign ubsrv
+или
+/opt/puppetlabs/bin/puppet cert sign --all #подпишет сертификаты всех машин
+возвращаеемся на ubsrv
+делаем тест, который проверяет связь с сервером
+/opt/puppetlabs/bin/puppet agent --test
+идем на машину с CentOS
+на сайте docs.puppet.com/puppet/latest/install_linux.htm находим инф. о репозиториях, ссылку на пакет для установщиков yum
+yum.puppetlabs.com
+установим wget
+yum install wget
+скачиваем информацию о репозиториях:
+wget https://yum.puppetlabs.com/puppetlabs-release-pcl-el-5.noarch.rpm
+напишет
+...
+Saving to: 'puppetlabs-release-pcl-el-5.noarch.rpm'
+установим данную информацию:
+rpm -Uvh puppetlabs-release-pcl-el-5.noarch.rpm
+установим puppet-agent:
+yum install puppet-agent
+редактируем ф-л конфигурации агента:
+vim /etc/puppetlabs/puppet/puppet.conf
+добавим в него информацию об имени агента:
+[agent]
+server = devops
+сохр,вых   
+добавим в hosts информацю о адресе сервера
+(исходим из того, что у нас нет dns-сервера)
+10.0.1.6	devops
+самим паппетом запускает службу puppet-agent:
+/opt/puppetlabs/bin/puppet resource service puppet ensure=running enable=true
+возвращаемся на сервер devops и смотрим сертификаты
+/opt/puppetlabs/bin/puppet cert list
+видим сертификат машины cnt3 с агентом:
+"cnt3" (SHA256) 43:7C:E1....
+подписываем сертификат
+/opt/puppetlabs/bin/puppet cert sign --all
+возвращаемся на CentOS и тестируем подключение:
+/opt/puppetlabs/bin/puppet agent --test
 
+мануал по серверу: https://puppet.com/docs/puppetserver/2.7/index.html
+по средам: https://puppet.com/docs/puppet/4.8/environments_creating.html
+по ресурсу типа "пакет": https://puppet.com/docs/puppet/5.5/types/package.html
+по файлу конфигурации агента: https://puppet.com/docs/puppet/5.5/configuration.html
 
-
-
-
-
+создадим тестовую среду с тестовым сценарием
+создадим манифест со сценарием для установки пакетов на клиентах
+идем на сервер devops
+узнаем версию агента:
+puppet --version
+узнаем версию сервера:
+puppetserver --version
+откроем ф-л конфигурации puppet-сервера:
+/etc/puppetlabs/puppet/puppet.conf
+в нем:
+смотрим параметр
+codedir = /etc/puppetlabs/code
+переходим по этому пути:
+там есть 3 подпапки, нас интересует environments, заходим туда
+там лежит одна попка среды production, с ней не будем работать, а создадим тестовую
+скопируем рекурсивно папку production в папку test:
+cp -R production/ test
+просмотрим папку test при помощи tree, но вначале установим его:
+apt-get install tree
+смотрим текущую директорию test при помощи tree:
+tree
+переименуем environment.conf в test.conf:
+mv environment.conf test.conf
+в этом ф-ле мы м. назначать отдельные параметры, которые б. переписывать глубже параметры указанные в манифесте
+перейдем в папку с манифестами:
+cd /etc/puppetlabs/code/environments/test/manifests
+создадим манифест (должен оканчиваться на .pp):
+vim test.pp
+запишем в него:
+package { 'tree': #пакет tree
+ensure => installed #ensure(находиться в состоянии) installed (установить)
+}
+#б.говорить узлам перейти в такое состояние, при котором пакет "tree" будет установлен
+т.о в манифестах паппита мы описываем желательное состояние системы и все узлы к этому желательному состоянию себя приводят
+идем на ubuntu
+здесь уже есть базовый манифест паппета, зайдем в конф. файл:
+vi /etc/puppetlabs/puppet/puppet.conf
+добавим:
+environment = test #что среда теперь не environment, а test
+runinterval = 1h #агенты забирают с puppet-server 1 раз в час
+сразу пытаемся эти изменения применить (синхронизируемся с сервером):
+/opt/puppetlabs/bin/puppet agent --test
+покажет:
+...
+Notice: /Stage[main]/Main/Package[tree]/ensure: created
+Notice: Applied catalog in 3.95 seconds
+#пакет установлен
+тоже самое делаем на машине CentOS
 
 
 
