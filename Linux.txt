@@ -11,11 +11,55 @@ manage-bde X: -unlock –password
 Cipher /E C:\Test.txt
 Cipher /D C:\Test.txt
 clear или ctrl+l очистка экрана
+просмотр сервисов запущенных в текущий момент:
+systemctl list-units -t service
+отключение | включение запуска сервиса при загрузке:
+sudo systemctl [disable | enable] имя_демона
+проверить включен ли сервис в автозагрузку:
+systemctl is-enabled имя_демона
+просмотр сервисов остановленных в аварийном режиме:
+systemctl list-units -t service --failed
 uptime - как долго запущена система
 папка lost+found создается на томах диска
 ctrl+alt+t запуск терминала в граф. среде
+обновит информацию о пакетах, содержащихся в репозиториях, чтобы в процессе обновления получить самые последние версии пакетов:
+apt-get update
+#существует 2 варианта обновления: dist-upgrade и upgrade. Предпочтительнее первый вариант.При конфликтах пакетов Ubuntu попытается обновите наиболее важные пакеты за счет менее важных.
+Поэтому команда dist-upgrade может установить дополнительные пакеты или удалить один из конфликтующих пакетов:
+apt-get dist-upgrade
 apt-cache search делаем поиск пакета связанный с названием
+apt-cache dpkg apache2 смотрим информацию (возможные версии, и адреса и названия пакетов) по apache2 
+чтобы заблокировать обновление определенного пакета (программы) в Ubuntu:
+sudo echo 'имя_пакета hold' | sudo dpkg --set-selections
+#имя пакета берется из команды, которой вы ставили этот пакет:
+#sudo apt-get install имя_пакета
+или
+apt-mark hold package_name
+или
+aptitude hold package_name
+данной командой можно просмотреть все статусы пакетов в системе
+(выведется весь список установленных пакетов и можно просмотреть у которых стоит статус hold - то есть заблокированы для обновления):
+dpkg --get-selections
+Данной командой можно просмотреть статус определенного пакета:
+dpkg --get-selections | grep 'имя_пакета'
+чтобы разблокировать обновление пакета:
+apt-mark unhold package_name
+или
+aptitude unhold package_name
+еще просмотреть информацию об установленном пакете можно:
+dpkg -s <имя_пакета>
+чтобы просмотреть используемые пакетом файлы:
+dpkg -L <имя_пакета>
+покажет все установленные приложения. После команды —get-selections можно указать критерий отбора:
+dpkg --get-selections dev* | less
 pcmci - плата расширения для ноутбуков
+корректная деинсталяция пакета со всеми установленными зависимостями:
+sudo apt-get autoremove имя_программы
+#на образе srvweb деинсталлировать пакет libapache2-mod-security2
+#sudo apt-get autoremove libapache2-mod-security2
+#попутно удаляет modsecurity-crs, libyajl2, libapache2-mod-security2, lublua5.1-0
+что бы наверняка удалить все что было установлено вместе с пакетом, можно посмотреть лог apt:
+cat /var/log/apt/history.log | more #покажет какие дополнительные пакеты были установлены вместе с основной установкой пакета
 
 РАБОТА С ЖЕЛЕЗОМ
 ================
@@ -138,6 +182,10 @@ LESS - позволяет постранично читать ф-л (нажимая PageDown), выполнять поиск
 less hello1.txt
 просмотреть системный журнал отфильтровав по слову semaev постранично:
 grep semaev /var/log/auth.log | less
+
+more - фильтр для просмотра ф-лов
+paste 1.txt #выводит на экран, для просмотра след. страницы просит нажать кнопку
+
 
 NL - нумерует строки
 nl hello1.txt
@@ -340,6 +388,8 @@ tar cvfz archive.tar.gz folder
 
 распаковать архив archive.tar:
 tar xvf archive.tar
+распаковать архив modsecurity-2.9.2.tar.gz используя GZIP,GZIP2 в папку archive:
+tar xfvz modsecurity-2.9.2.tar.gz -C ./archive
 
 --------------------------------------
 
@@ -484,6 +534,14 @@ ps -eo user,pid,pcpu(цпу),nice(приоритет),comm(описание)
 ключ alx (l-list) -подробный список, где колонка NI (nice) - приоритет процесса (-20 максимальный +19 минимальный)
 например вывести только процессы sleep:
 ps aux | grep sleep
+показать процессы для пол-ля max:
+ps -U max -u max u
+показать процессы apache или httpd:
+ps aux | egrep '(apache|httpd)'
+выдать 10 процессов, потребляющих наибольшее количество памяти:
+ps -auxf | sort -nr -k 4 | head -10
+выдать 10 процессов, потребляющих наибольший ресурс процессора:
+ps -auxf | sort -nr -k 3 | head -10
 закрыть - q
 
 убиваются процессы ком. kill id_процесса:
@@ -1425,7 +1483,7 @@ chmod 0755 1.txt
 find / -perm -u+s
 первый раз м. найти не все файлы, если б.д. была не проиндексирована - н.запустить второй раз
 увидим ф-лы:
-find: `/run/user/1000/gvfs': Отказанов доступе
+find: '/run/user/1000/gvfs': Отказанов доступе
 /usr/sbin/pppd
 /usr/sbin/X
 /usr/sbin/sudo
@@ -2331,6 +2389,8 @@ getent group
 
 Страшное описание sudoers: https://opennet.ru/man.shtml?topic=sudoers&category=5&russian=0
 Хорошее описание sudo: https://wiki.archlinux.org/index.php/Sudo_(Русский)
+покажет какие пользователи сейчас находятся в системе и какие процессы запущены от их имени:
+w username #например w max
 
 если обычный пол-ль не может отредактировать системный ф-л, такие права есть только у суперпользователя
 1. для этого нужно войти в режим суперпользователя su
@@ -2338,7 +2398,7 @@ getent group
 (домашним каталогом б. каталог пол-ля root)
 чтобы вернуться к пол-лю под которым зашел в систему - exit
 2. чтобы постоянно не находиться в режиме su (ключ -С комманда), т.к. не безопасно 
-su -C 'комманда'
+su -c 'комманда'
 например
 su -c 'vi /etc/resolv.conf'
 вводим пароль root
@@ -2854,10 +2914,22 @@ journalctl --since 15:30 --until 15:38:17
 journalctl --since yesterday --until now
 можем посмотреть отфильтровав по службе (ключ -u unit):
 journalctl -u networking.service служба сети
+journalctl -u apache2 #журнал работы сервиса apache2
 посмотреть события ядра:
 journalctl -k
 посмотреть события с определенным кодом(типом) ошибки (ключ -p):
 journalctl -p err
+код уровня ошибок:
+0: emerg (система неработоспособна);
+1: alert (требуется немедленное вмешательство);
+2: crit (критическое состояние);
+3: err (ошибка);
+4: warning (предупреждение);
+5: notice (всё нормально, но следует обратить внимание);
+6: info (информационное сообщение);
+7: debug (отложенная печать).
+просмотреть журнал сообщений обо всех ошибках, имевших место в системе во время предыдущей загрузки, можно при помощи команды:
+journalctl -p err -b -1
 тоже с момента загрузки:
 journalctl -p err -b
 показать новые сообщения (последние 10):
@@ -2865,7 +2937,13 @@ journalctl -n
 показать новые сообщения (последние 20):
 journalctl -n 20
 смотреть логи в режиме онлайн:
-journalctl -f
+journalctl -f #выйти ctrl+z или ctrl+c
+по умолчанию, journalctl не переносит строки по ширине экрана. Чтобы сократить вывод по ширине экрана - выполните:
+journalctl --no-full
+по умолчанию journalctl использует для вывода сообщений логов внешнюю утилиту less.
+В этом случае к ним невозможно применять стандартные утилиты для обработки текстовых данных (например, grep).
+Эта проблема легко решается: достаточно воспользоваться опцией --no-pager, и все сообщения будут записываться в стандартный вывод:
+journalctl --no-pager
 посмотреть сколько места занимает журнал journalctl:
 journalctl --disk-usage
 установить сколько места будет занимать журнал journalctl (максимально допустимый размер хранимых на диске логов, ключ --vacuum-size, лишние ф-лы б. удаляться):
@@ -3363,6 +3441,38 @@ tail /var/log/mail.log
 https://myaccount.google.com/lesssecureapps
 смотрим последние 4 сообщения лога:
 tail -n 4 /var/log/mail.log
+
+посмотреть очередь:
+mailq
+принудительно запустить отправку из очереди:
+mailq -q
+или
+postqueue -f
+Очистить очередь
+удалить все сообщения:
+postsuper -d ALL
+postsuper -d <идентификатор письма>
+где идентификатор письма можно увидеть командой mailq
+также, очередь можно посмотреть командами:
+find /var/spool/postfix/deferred -type f | wc -l
+find /var/spool/postfix/active -type f | wc -l
+find /var/spool/postfix/incoming -type f | wc -l
+find /var/spool/postfix/defer -type f | wc -l
+перезапустить очередь:
+postsuper -r ALL
+если не помогло, поочередно:
+postfix stop
+postsuper -r ALL
+postfix start
+задать периодичность повторной отправки сообщений:
+postconf -e "queue_run_delay = 5m"
+задать время, на которое будет отложена отправка сообщений, которые не были отправлены по причине временных неисправностей (например, принимающий сервер не отвечает или просит повторить запрос позже):
+postconf -e "minimal_backoff_time = 10m"
+задать максимальное время для отправки сообщений, которые не были отправлены по причине временных неисправностей:
+postconf -e "maximal_backoff_time = 15m"
+Выставить время жизни для сообщения в очереди:
+postconf -e "maximal_queue_lifetime = 1d"
+
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 выбор системы: https://toster.ru/q/44724
 внедрение каяко: https://habr.com/company/plarium/blog/220585/
@@ -3406,7 +3516,7 @@ usermod -aG rt www-data
 Мануал по конфигуратору: https://docs.bestpractical.com/rt/4.2.15/configure.html
 Русскоязычная статья неплохая: https://habr.com/sandbox/96505/
 Лучший мануал (англ): http://binarynature.blogspot.ru/2013/10/install-request-tracker-4-on-ubuntu-server.html
-для начала обнофим информацию о репозиториях:
+для начала обновим информацию о репозиториях:
 apt-get update
 проверяем установлен ли perl и make:
 apt-get install perl
@@ -4016,6 +4126,8 @@ nmap localhost
 PORT 	STATE	SERVICE
 22/tcp	open	ssh #занят демоном ssh
 631/tcp	open	ipp #занят internet printing protocol
+или
+sudo nmap -p1-65535 [локал_ip_адрес]
 для управлением демоном ssh в старой системе инициализации sys.v (мы все равно еще м. к ней обращаться в ubuntu, потому-что современная система инициализации system.d обратно совместима со старой)
 перейдем в папку /etc/init.d/ и посмотрим лежащие там скрипты
 в частности там есть скрипт с названием ssh
@@ -4387,7 +4499,7 @@ W:Невозможно сбросить права для скачивания, так как файл "squid3_3.5.12-lubuntu7
 chmod 777 squid3 3.5.12-lubuntu7.4.dsc
 и снова запускаем скачивание:
 apt-get source squid3
-установим tree, чтобы посмотреть как осуществляется сборка пакетов
+установим tree, чтобы видеть дерево ф-лов:
 apt install tree
 покажет дерево директорий
 нас интересует директория из папки пользователя squid3-3.5.12 в ней находится все, что нужно для сборки пакетов
@@ -4432,7 +4544,8 @@ configure options: среди флагов покажет наши флаги
 перейдем в директорию squid и сгенерируем необходимые сертификаты:
 cd /etc/squid/
 выполним команду:
-openssl req -new -newkey rsa:1024 -days 365 -nodes -x509 -keycut squidCA.pem -out squidCA.pem
+#openssl req -new -newkey rsa:1024 -days 365 -nodes -x509 -keycut squidCA.pem -out squidCA.pem #возможно ошибка
+openssl req -new -newkey rsa:1024 -days 365 -nodes -x509 -keyout squidCA.key -out squidCA.pem
 Запросит базовые вещи для создания сертификата: страну,город...
 сделаем бэкап ф-ла конфиг. squid:
 cp squid.conf squid.conf.backup
@@ -4644,10 +4757,88 @@ Notice: Applied catalog in 3.95 seconds
 #пакет установлен
 тоже самое делаем на машине CentOS
 
+управление польз-лями при помощи puppet
+на сервере puppet поменяем на более корректное название созданного нами манифеста:
+/etc/puppetlabs/code/environments/test/manifests/test.pp на site.pp
+отредактируем данный пакет (создание базового пол-ля) и дабавим в нем:
+user { 'engin': #имя ресурса создаваемого пол-ля, б. виден в логах puppet 
+name => 'engineer', #имя пол-ля
+home => '/home/engineer', #домашняя папка пол-ля
+managehome => true, #создать дом. папку
+shell => '/bin/bash' #оболочка по умолчанию
+ensure => present, #чтобы пол-ль появился
+password => '12345',
+groups => [sudo, wheel], #присутсвие пол-ля в группах
+}
+переходим на клиентский ubuntu
+/opt/puppetlabs/bin/puppet agent --test
+выходит ошибка, об отсутствии у клиента группы wheel (на убунте ее нет)
+поэтому переделываем скрипт, приводим к виду:
+node 'ubsrv' { #имя хоста, имеет значение имя сертификата (м.посмотреть командой /opt/puppetlabs/bin/puppet cert list --all)
+	user { 'engin':
+	name => 'engineer',
+	home => '/home/engineer',
+	managehome => true,
+	shell => '/bin/bash',
+	ensure => present,
+	password => '12345',
+	groups => sudo,
+	}
+}
+node 'cnt3' {
+	user { 'engin':
+	name => 'engineer',
+	home => '/home/engineer',
+	managehome => true,
+	shell => '/bin/bash',
+	ensure => present,
+	password => '12345',
+	groups => wheel,
+	}
+}
+чтобы не прописывать открытый пароль восп-ся утилитой mkpasswd (создает хэши паролей)
+для ее установки ставим пакет whois
+apt-get install whois
+запускаем mkpasswd и набираем пароль, она его хэширует, копируем созданный хэш в конфиг и вставляем вместо пароля
+password => 'fk4h46IKSuJbs',
+запускаем  /opt/puppetlabs/bin/puppet agent --test
+открываем ф-л /etc/passwd и видим, действительно пол-ль добавился
+проверяем входит ли он в группу sudo:
+cat /etc/group | grep sudo
+тоже проводим на машине CentOS
+
+управление ф-лами в puppet
+задача пробросить профиль bash на клиентские машины
+настроим конфигурацию файл-сервера на puppet server для управления распределения ф-лов по сети 
+перейдем в директорию /etc/puppetlabs/puppet и здесь создадим ф-л fileserver.conf, кот-ый б. отвечать за настройки файл.сервера
+если в этой папке существует ф-л fileserver.conf, то сервер считается настроенным
+отредактируем его
+[files]
+path /etc/puppetlabs/code/files #директория, где б. находиться ф-лы
+allow * #разрешить всем доступ
+создадим директорию для ф-лов среды test:
+mkdir /etc/puppetlabs/code/files/test
+создадим в этой папке ф-л конфигурации bash
+
+sudo vim .bashrc
+#managed by puppet	(это правило хорошего тона, говорит, что ф-л управляется puppet и все изменения б. стерты при след. синхронизации с puppet server)
+#ком. tput управляет цветом вывода setaf - установить цвет текста 2(зеленый) sgr 0 - вернуть цвет background на 0 - белый
+echo $(tput setaf 2) "Hello!" $(tput sgr 0)
+echo "Точное время: $(date)"
+echo "Место на дисках:"
+df -h | sed -n'/^\/dev/p' #показать только те строки которые начинаются с /dev их покажи -p print
+echo "Имя хоста: $(tput setaf 3)$(hostname -f)$(tput sgr 0)"
+сохр, выходим
+открываем ф-л манифеста:
+/etc/puppetlabs/code/environments/test/manifests/site.pp
+добавим секцию:
+file { 'bashrc':
+ensure => file, #проверяем, что ф-л присутствует в системе
+path => '/home/engineer/.bashrc',
+source => 'puppet:///', #источник ф-ла, вначале указываем, что есть puppet server/имя_секции/путь_к_ф-лу
 
 
-
-
+}
 
 
 
