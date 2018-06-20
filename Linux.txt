@@ -275,6 +275,78 @@ sar -bv 1 1 #вывод расширенной инф. по дискам
 sar -d 1 1 #вывод в разрезе по дискам
 -------------------------------------------------------------------------------------------------------------------------------------
 
+СИСТЕМА МОНИТОРИНГА COLLECTD 
+============================
+
+yum install epel-release
+yum install collectd
+откроем файл конфигурации /etc/collectd.conf
+в нем для работы со статистикой есть плагин rrdtool, раскомментируем секцию этого плагина
+а также то место, где плагин подключается: LoadPlugin rrdtool
+#rrdtool - набор утилит для работы с кольцевой базой данных rrd
+делаем установку данной утилиты, web-сервер apache, демон который покажет статистику collectd-web
+yum install rrdtool httpd collectd-web
+т.к. настройки конфиг-ии мы изменили, нам нужно его перезапустить
+systemctl start collectd
+стартуем сервер apache:
+systemctl start  httpd
+получим с него вэб-страницу по умолчанию:
+curl http://127.0.0.1
+конфиг apache находится в ф-ле /etc/httpd/conf/httpd.conf
+открываем его и смотрим в конце путь подключения конф. ф-лов:
+IncludeOptional conf.d/*.conf
+смотрим эту директорию и видим, что там лежит конф. ф-л /etc/httpd/conf.d/collectd.conf
+открываем этот ф-л и видим в начале ф-ла:
+Alias /collectd/ /usr/share/collectd/collection3/
+и видим диресторию где лежат скрипты cgi:
+<Directory "/usr/share/collectd/collection3/bin">
+	Options ExecCGI
+	AddHandler cgi-script .cgi
+	Require local
+</Directory>
+выходим и проверяем страницу плагина, заходим по алиасу:
+curl http://127.0.0.1/collectd/bin/index.cgi
+теперь пробуем зайти на эту страницу с удаленной машины, для этого в конфиге apache
+изменим директиву в секциях, разрешив доступ всем, а не только с локального хоста:
+<Directory "/usr/share/collectd/collection3/">
+	#Require local
+	Require all granted
+	DirectoryIndex bin/index.cgi
+	DirectoryIndexRedirect on
+</Directory> 
+<Directory "/usr/share/collectd/collection3/share/">
+	Require all granted
+</Directory>
+<Directory "/usr/share/collectd/collection3/bin/">
+	Options ExecCGI
+	AddHandler cgi-script .cgi
+	#Require local
+	Require all granted
+</Directory>
+сохр,вых
+делаем рестарт apache:
+systemctl reload httpd
+теперь все заработало
+м. посмотреть какие плагины есть к collectd:
+yum search collectd
+-------------------------------------------------------------------------------------
+
+Troubleshoting
+==============
+
+посредством top находим самый грузящий процесс, находим его pid
+потом командой отыскиваем сам процесс и pid родительского процесса <pid2>(указывается рядом справа):
+ps -ef | grep <pid1>
+потом ищем программу родительского процесса:
+ps -ef | grep <pid2>
+и смотрим информацию о грузящем приложении
+либо
+в htop нажимаем <F5> показывает дерево поцессов
+можем посмотреть открытые ф-лы грузящего процесса по pid-у:
+lsof -p <pid>
+если нет связи с хостом, проверим по каким портам работают программы на хосте:
+netstat -ntulp
+
 КОММАНДЫ ФИЛЬТРАЦИИ И ВЫВОДА НА ЭКРАН
 =====================================
 clear - очистить экран
@@ -1216,7 +1288,7 @@ mail -s "info" root
 
 подстановка:
 зададим переменной х значение даты
-переменная у получает результат выполнения команды uptime -p:
+переменная y получает результат выполнения команды uptime -p:
 x=$(date)
 y=`uptime -p`
 echo " Today is $x and we are $y"
@@ -1316,8 +1388,203 @@ parted -l
 parted /dev/sdb
 help - открываем help
 q - выход
-
 gparted - таже ПО с граф. оболочкой
+pvs phisical volume
+vgs volume group  
+lvs logical volume
+fstab - смотрим точки монтирования
+----------------------------------------------------------
+типы событий: https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/6/html/security_guide/sec-Audit_Record_Types
+
+перенос диска с корневой директорией с большего на меньший
+подключаем меньший диск
+находим его
+fdisk -l
+покажет:
+Disk /dev/sdb: 10.7 GB
+создадим разделы (скажем fdisk-у работать с /dev/sdb):
+fdisk /dev/sdb
+n #создать новый раздел
+p #выбираем primary
+#соглашаемся с номером раздела (1-4, default 1)
+#соглашаемся начать с первого сектора (First sector, default 2048)
+какой размер б. у раздела (просит указать последний сектор или размер раздела(K,M.G))
+указываем размер:
++1G
+создадим еще один раздел:
+n
+p
+#соглашаемся с номером по порядку
+#делаем весь оставшийся размер до конца
+создадим lvm
+#изменим метку раздела
+t
+#выбираем номер раздела, для кот-го хотим изменить тип
+1
+#спрашивает какой hex code(16-ричный код) будет у раздела, нажимаем L для просмотра списка кодов
+#для 1-го загрузочного раздела будет метка 83 Linux
+83
+#продолжаем работу с изменением типа разделов
+t
+#выбираем номер раздела (default 2), соглашаемся
+#для 2-го загрузочного раздела будет метка 8e Linux LVM 
+8e
+#посмотрим, что получилось, нажимаем p (print)  
+p
+покажет:
+/dev/sdb1 ...
+/dev/sdb2 ...
+#если все устраивает, нажимаем w-записать изменения
+w
+после чего форматируем разделы
+1-й в ф.систему xfs:
+mkfs.xfs /dev/sdb1
+т.к. 2-му разделу мы указали метку LVM, необходимо его превратить в LVM
+#создай phisical volume
+pvcreate /dev/sdb2
+#после чего проверим создание через pvs, покажет
+PV	VG	Fmt	Attr	PSize	PFree
+/dev		lvm2	---	<9.00g	<9.00g
+#далее на созданном pisical volume необходимо создать volume group с допустим названием "centos"
+vgcreate centos /dev/sdb2
+#после чего проверим создание через vgs, покажет
+VG	#PV	#LV	#SN	Attr	VSize	VFree
+centos	1	0	0	wz--n-	<9.00g	<9.00g
+#далее создадим logical volume на всём свободном месте с именем "root" на volume group "centos"
+lvcreate -l 100%FREE -n root centos
+#после чего проверим создание через lvs, покажет
+LV	VG	Attr	LSize	Pool	Origin	Data%	Meta%	Move	Log	Cpy%Sync	Convert
+root	centos	-wi-a--	<9.00g
+отформатируем созданный раздел (LVM-разделы всегда монтируются к /dev/mapper):
+mkfs.xfs /dev/mapper/centos-root
+теперь будем копировать данные со старого места в новое место
+для этого создадим в корне директорию монтирования для старого диска - old и для нового диска -new
+mkdir /old
+mkdir /new
+#почему мы просто не скопируем корень в новый раздел?
+#потому-что новый раздел нам нужно подключить куда-то в ф-ловую систему и м. случится что мы будем копировать этот раздел сам в себя
+примонтируем старый загрузочный (/boot) раздел в папку old:
+mount /dev/sda1 /old
+примонтируем первый раздел диска sdb в папку new:
+mount /dev/sdb1 /new
+#копирование через cp не всегда корректно передает права, поэтому лучше это делать через rsync
+rsync -av /old/* /new/
+после этого отмонтируем разделы:
+umount /old
+umount /new
+теперь подключим вторые разделы:
+mount /dev/mapper/cl-root /old
+mount /dev/mapper/centos-root /new
+теперь также копируем всю инф-ю со старого раздела в новый:
+rsync -av /old/* /new/
+после отмонтируем старый раздел:
+umount /old
+теперь будем править новый fstab
+смотрим инф-ю о текущих подключенных разделах в fstab:
+cat /etc/fstab
+покажет:
+/dev/mapper/cl-root				/	xfs	defaults	0	0
+UUID=c9bfe5df-9915-4af2-ad47-e068d71db2d7	/boot	xfs	defaults	0	0
+/dev/mapper/cl-swap				swap	swap	defaults	0	0
+он у нас теперь полностью скопирован в новый раздел
+узнаем id нового раздела с помощью blkid
+покажет:
+/dev/sda1: UUID="c9bfe5df-9915-4af2-ad47-e068d71db2d7" TYPE="xfs"
+/dev/sda2: UUID="L6R0Eb-4D5U-kTBN-22Fk-UIeZ-c8EF-1RODXK" TYPE="LVM2_member"
+/dev/sdb1: UUID="2258ad27-58fc-496f-b514-89a5827dlb9e" TYPE="xfs"
+/dev/sdb2: UUID="SejlGi-euy9-Y42P-ro4u-X5SK-a7of-W5Yk6P" TYPE="LVM2_member"
+/dev/mapper/cl-root: UUID="d73763b5-cfcl-46al-a711-2460a715a2cb" TYPE="xfs"
+/dev/mapper/cl-swap: UUID="8c21a905-la2b-4835-abbf-00453320a9a9" TYPE="swap"
+/dev/mapper/centos-root: UUID="42f22b73-4c58-4b46-a76e-2b12ee5790b3" TYPE="xfs"
+отредактируем новый fstab:
+vi /new/etc/fstab
+приводим его к виду:
+/dev/mapper/centos-root				/	xfs	defaults	0	0
+UUID=2258ad27-58fc-496f-b514-89a5827dlb9e	/boot	xfs	defaults	0	0
+сохр,вых
+смотрим все точки монтирования в текущей файловой системе командой mount, покажет кучу мусора, но в последних строках б. запись вида:
+sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime,seclabel)
+proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)
+devtmpfs on /dev type devtmpfs (rw,nosuid,seclabel,size=1930096k,nr_inodes=482524,mode755)
+.....
+/dev/sda1 on /boot type xfs (rw,relatime,seclabel,attr2,inode64,noquota)
+#нам нужно, чтобы вся эта инф-я была доступна в новой ф-ловой системе
+#видим, что /dev/sda1 в текущей ф-ловой системе смонтирован в /boot
+тоже самое нам нужно сделатьь в новой ф-ловой системе, для этого сделаем монтирование:
+mount /dev/sdb1 /new/boot
+#сейчас у нас lvm centos-root в текущую ф-ловую систему в директорию new, а диск /dev/sdb1 в этой директории /new в директорию /boot (/new/boot)
+#опция --bind у mount позволяет подключить часть ф-ловой структуры в другой каталог, при этом не удаляя исходную точку монтирования
+подключим /dev в новую ф-ловую систему /new:
+mount --bind /dev /new/dev
+подключим /sys в новую ф-ловую систему /new:
+mount --bind /sys /new/sys
+подключим /proc в новую ф-ловую систему /new:
+mount --bind /proc /new/proc
+теперь изменим текущий корень файловой системы:
+chroot /new
+теперь если посмотрим корень ф-ловой системы ls /, нам б. отображаться корень /new/
+теперь нам нужно сделать grub update, но т.к. в новом загрузчике CentOS grub2 такой ф-ии нет делаем следующее:
+старая информация загрузчика находится в ф-ле /etc/default/grub
+откроем его, он содержит:
+GRUB_TIMEOUT=5
+GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
+GRUB_DEFAULT=saved
+GRUB_DISABLE_SUBMENU=true
+GRUB_TERMINAL_OUTPUT="console"
+GRUB_CMDLINE_LINUX="crashkernel=auto rd.lvm.lv=cl/root rd.lvm.lv=cl/swap rhgb quiet" #отредактируем данную строку со старой инф-ей
+GRUB_DISABLE_RECOVERY="true"
+исправим данную строчку на новую инф-ию:
+GRUB_CMDLINE_LINUX="crashkernel=auto rd.lvm.lv=centos/root rhgb quiet" #также уберем инф-ю о swap-разделе, т.к. его у нас нету
+сохр, вых
+в директории нового загрузчика grub2 есть свой конфиг:
+vim /boot/grub2/grub.cfg
+#конфиг grub предыдущ. версии находился в /boot/grub/
+найдем утилиту в установщике, кот-я раньше называлась grub-mkconfig:
+yum search grub
+видим, что есть пакеты grub2-tools.x86_64 : Support tools for GRUB
+устанавливаем данный пакет:
+yum install grub2-tools
+командой grub смотрим все установленные модули и видим, что теперь команда называется grub2-mkconfig
+заменяем существующий конфиг командой:
+grub2-mkconfig -o /boot/grub2/grub.cfg
+теперь нужно установить сам загрузчик:
+grub2-install /dev/sdb
+выходим из новой ф-ловой системы (мы в нее перемещались командой chroot /new):
+exit
+выключаем комп и вытаскиваем старый hdd:
+poweroff
+#после загрузки нас почему-то не пускает залогиниться под пол-лем root
+#тогда мы при старте системы, во время выбора варианта системы загрузки нажимаем клавишу "е"
+#и выбираем строчку с загрузкой ядра linux
+linux16 /vmlinuz-3.10.0-693.5.2.e17.x86_64 root=/dev/mapper/centos-root ro crashkernel=auto rd.lvm.lv=centos/root rhgb quiet
+#где rhgb - redhat graphical boot, к-рый показывает заставки и иконки вместо реальной инф-ии загрузки
+#quiet - подавляет большинство выводимых сообщений. Поэтому удаляем их из пункта загрузки и нажимаем ctrl+x
+#опять загрузиться не получилось, опять при старте выбираем эту строчку и меняем режим ro (read only) на rw (read write) и
+#укажем, что б. процессом init, добавляем init=/sysroot/bin/bash_crashkernel=auto нажимаем ctrl+x
+linux16 /vmlinuz-3.10.0-693.5.2.e17.x86_64 root=/dev/mapper/centos-root rw init=/sysroot/bin/bash_crashkernel=auto rd.lvm.lv=centos/root rhgb quiet
+#грубо говоря мы просто запустили оболочку /bin/bash
+сделаем chroot для удобства, чтобы перейти в тот root, который у нас есть в ф-ловой системе:
+chroot /sysroot/
+смотрим лог аудита:
+less /var/log/audit/audit.log #клавишей "G" переходим в конец ф-ла и делаем поиск слова "root" нажав "/" наберем "root"
+видим строчку:
+type=USER_AUTH ....acct="root"....res=success #значит аутентификация была выполнена успешно
+type=USER_ACCT ....acct="root"....res=success
+....
+type=AVC ....avc: denied {transaction} for pid... #AVC - access vector cache относится к SELinux, был отказ
+потом
+type=SYSCALL.....success=no.....
+после чего происходит запись к-то события
+type=USER_END......acct="root"....res=success #успешное завершение сессии пол-ля
+type=SERVICE_STOP....res=success #остановка системы после того как пол-ля root не пустило в систему
+выходим из режима chroot и возвращаемся в обычный корень командой exit
+делаем reboot
+т.к. мы определили проблему запуска на уровне SELinux
+теперь нам нужно запуститься с выключенным SELinux-ом
+для этого в варианте загрузки выбираем вариант с запуском ядра и добавляем к нему выключение Selinux:
+linux16 /vmlinuz-3.10.0-693.5.2.e17.x86_64 root=/dev/mapper/centos-root ro crashkernel=auto rd.lvm.lv=centos/root rhgb quiet selinux=0
+после того, как у нас теперь получилось войти в систему, после перезагрузке он нас начинает пускать уже в стандартном режиме загрузки
+
 ---------------------------------------
 
 FDISK
@@ -4246,6 +4513,7 @@ iftop - в реальном времени псевдографикой показывает куда/откуда отправляется ин
 	cum - сколько всего трафика б. получено с момента запуска программы
 	peak - пиковое значение за посл. 40сек.
 	rates - ср.скорость за посл. 2, 10, 40сек
+iftop -nP #отключает имена хостов, включает номера портов
 закрываем через q
 nload - псевдографикой показ-ет загрузку сети
 	Incoming - входящий
@@ -4255,6 +4523,48 @@ vnstat -h #статистика по часам в течение дня
 vnstat -d #статистика по дням
 vnstat -t #top 10 дней в которые б. скачано больше всего трафика
 vnstat -m #статистика по месяцам
+
+для трассировки маршрута исп. traceroute
+по умолчанию исп. протокол icmp, т.к. он чаще режится, м. переключится на исп. протокола tcp:
+traceroute -T mail.ru
+сделать не 30 шагов (по умолчанию), а - 100, и отправлял не 3 пакета за один шаг (по умолчанию), а - 1:
+traceroute -m 100 -q 1 mail.ru
+чтобы при трассирровке инф-я динамически обновлялась исп. утилиту mtr:
+mtr mail.ru
+где
+Loss% - %потери пакетов
+Snt - к-во отправленных пакетов
+Last - время прохождения последнего пакета через всю цепочку
+Avg - ср-ее время
+Best - лучшее время
+Wrst - худшее время (worst)
+StDev - разброс значений (если разброс большой, то значит до этого узла сильно скачат значения и мы не м. доверять значению avg, 
+	также это м. говорить о сильной загрузке данного маршрутизатора)
+#в идеальной ситуации цифры д. расти сверху вниз
+скажем, чтобы он работал по порту 80, с интервалом 0,2сек., с отчетом (-r) широким (-w), отправил 10 пакетов (-с 10):
+mtr -P 80 -i 0.2 -rwc 10 mail.ru
+
+для замера скорости канала исп. утилита iperf или iperf3
+на одной стороне запускается сервер, на другой клиент (по умолч. идет отправка 1ГБ)
+запустим сервер:
+iperf3 -s #б. слушать порт 5201
+запустим клиент на др. машине с адресом хоста сервера:
+iperf3 -c <адр_хоста>
+м. вручную задать размер передаваемых данных -n 500МБ:
+iperf3 -c <адр_хоста> -n 500M
+м. задать время теста -t 5 (5сек.):
+iperf3 -c <адр_хоста> -t 5
+м. запустить тест в обратном порядке (б. отправлять пакеты сервер, upload у сервера, downoad у клиента) для этого запустим на клиенте с ключом -R:
+iperf3 -c <адр_хоста> -R
+проверка канала в фоновом режиме с выводом рез-та через 10сек:
+iperf3 -c <адр_хоста> -i 10
+Interval - время за которое отправляются данные (по умолч. 1сек)
+Transfer - отправлено байт
+Bandwidth - пропускная способность
+Retrive - к-во переотправки пакетов
+В итоговых значениях покажет:
+Sender - скорость upload (отправки до сервера)
+Receiver - скорость download (загрузки с сервера)
 
 
 
@@ -4325,7 +4635,7 @@ systemctl disable ssh #после чего данная служба при перезапуске системы не будет
 nmap 10.0.2.15
 покажет:
 All 1000 scanned ports on 10.0.2.15 are closed #все порты закрыты
-команда lsof (list oopen files) покажет все открытые ф-лы, а также сетевые соединения (ключ -i)
+команда lsof (list open files) покажет все открытые ф-лы, а также сетевые соединения (ключ -i)
 lsof -i
 #покажет тоже, что и netstat но в более подробном виде
 COMMAND(комманда)
